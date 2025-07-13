@@ -118,11 +118,34 @@ export default defineComponent({
   props: {
     store: {
       type: Object,
-      required: true
+      required: false,
+      default: () => ({
+        users: [
+          { id: 1, name: 'John Doe', email: 'john@example.com', role: 'admin' },
+          { id: 2, name: 'Jane Smith', email: 'jane@example.com', role: 'user' },
+          { id: 3, name: 'Bob Johnson', email: 'bob@example.com', role: 'user' }
+        ]
+      })
+    },
+    actions: {
+      type: Object,
+      required: false,
+      default: () => ({})
     },
     i18n: {
       type: Object,
-      required: true
+      required: false,
+      default: () => ({})
+    },
+    eventBus: {
+      type: Object,
+      required: false,
+      default: () => ({})
+    },
+    eventHelpers: {
+      type: Object,
+      required: false,
+      default: () => ({})
     }
   },
   setup(props) {
@@ -140,18 +163,54 @@ export default defineComponent({
     const errors = reactive<FormErrors>({})
 
     const isCreating = computed(() => !user.value)
+
     const showForm = computed(() => !loading.value && !isPostSaveState() && (user.value || isCreating.value))
 
-    const store = props.store
-    const t = (key: string) => (props.i18n && props.i18n.t ? props.i18n.t(key) : key)
+    // Create a reactive store that syncs with parent data
+    const store = reactive({
+      users: props.store?.users || [],
+      loading: props.store?.loading || false,
+      error: props.store?.error || null,
+      selectedUser: props.store?.selectedUser || null
+    })
 
-    function getUserIdFromUrl(): number | null {
+    // Fallback translations for when i18n is not available
+    const fallbackTranslations: Record<string, string> = {
+      'editUser.title': 'Edit User',
+      'editUser.createTitle': 'Create User',
+      'common.back': 'Back',
+      'common.loading': 'Loading...',
+      'editUser.form.name': 'Name',
+      'editUser.form.email': 'Email',
+      'editUser.form.role': 'Role',
+      'editUser.form.submit': 'Save Changes',
+      'editUser.form.create': 'Create User',
+      'editUser.form.cancel': 'Cancel',
+      'users.roles.user': 'User',
+      'users.roles.admin': 'Administrator'
+    }
+
+    // Use provided translations or fallback
+    const translations = reactive<Record<string, string>>({
+      ...fallbackTranslations,
+      ...(props.i18n ? {} : {}) // Will be updated from iframe message
+    })
+
+    // Translation function with fallback
+    const t = (key: string) => {
+      if (props.i18n && props.i18n.t) {
+        return props.i18n.t(key)
+      }
+      return translations[key] || key
+    }
+
+    const getUserIdFromUrl = (): number | null => {
       const urlParams = new URLSearchParams(window.location.search)
       const id = urlParams.get('id')
       return id ? parseInt(id) : null
     }
 
-    function isPostSaveState(): boolean {
+    const isPostSaveState = (): boolean => {
       const urlParams = new URLSearchParams(window.location.search)
       return urlParams.get('saved') === 'true'
     }
@@ -183,9 +242,32 @@ export default defineComponent({
 
     // Listen for messages from parent iframe
     onMounted(() => {
+      console.log('[EditUserApp] Mounted, userId:', getUserIdFromUrl())
+      
+      window.addEventListener('message', (event) => {
+        if (event.data && (event.data.type === 'INIT_DATA' || event.data.type === 'STORE_UPDATE')) {
+          console.log('[EditUserApp] Received data from parent in edit:', event.data)
+          
+          // Update store with data from parent
+          if (event.data.store) {
+            console.log('[EditUserApp] Updating store with:', event.data.store)
+            store.users = event.data.store.users || []
+            store.loading = event.data.store.loading || false
+            store.error = event.data.store.error || null
+            store.selectedUser = event.data.store.selectedUser || null
+          }
+          
+          // Update translations with data from parent (only for INIT_DATA)
+          if (event.data.type === 'INIT_DATA' && event.data.translations) {
+            Object.assign(translations, event.data.translations)
+          }
+        }
+      })
+
       // Set initial loading state
       const userId = getUserIdFromUrl()
       if (userId) {
+        console.log('[EditUserApp] Setting initial loading state for userId:', userId)
         loading.value = true
       }
     })
@@ -193,8 +275,15 @@ export default defineComponent({
     // Watch for store changes to load user when data becomes available
     watch(() => store.users, (newUsers) => {
       const userId = getUserIdFromUrl()
+      console.log('[EditUserApp] Store users changed:', {
+        newUsersLength: newUsers.length,
+        userId,
+        hasUser: !!user.value,
+        loading: loading.value
+      })
       
       if (userId && newUsers.length > 0 && !user.value) {
+        console.log('[EditUserApp] Loading user with ID:', userId)
         loadUser(userId)
       }
       // Failsafe: if user is present, clear loading
@@ -206,6 +295,7 @@ export default defineComponent({
     // Also watch for loading state to clear it when user is loaded
     watch(() => user.value, (newUser) => {
       if (newUser) {
+        console.log('[EditUserApp] User loaded, clearing loading state (immediate watcher)')
         loading.value = false
       }
     }, { immediate: true })
@@ -255,6 +345,14 @@ export default defineComponent({
             setTimeout(() => {
               window.parent.postMessage({ type: 'NAVIGATE', route: '/users?saved=true' }, '*')
             }, 100)
+          } else if (props.eventHelpers && props.eventHelpers.requestUserCreation) {
+            // Standalone mode
+            await props.eventHelpers.requestUserCreation({
+              name: form.name.trim(),
+              email: form.email.trim(),
+              role: form.role
+            })
+            window.location.href = '/users'
           }
         } else {
           // Update existing user
@@ -273,6 +371,14 @@ export default defineComponent({
             setTimeout(() => {
               window.parent.postMessage({ type: 'NAVIGATE', route: '/users?saved=true' }, '*')
             }, 100)
+          } else if (user.value && props.eventHelpers && props.eventHelpers.requestUserUpdate) {
+            // Standalone mode
+            await props.eventHelpers.requestUserUpdate(user.value.id, {
+              name: form.name.trim(),
+              email: form.email.trim(),
+              role: form.role
+            })
+            window.location.href = '/users'
           }
         }
       } catch (err) {
@@ -287,6 +393,9 @@ export default defineComponent({
       if (window.parent !== window) {
         // In iframe, send message to parent to navigate
         window.parent.postMessage({ type: 'NAVIGATE', route: '/users' }, '*')
+      } else {
+        // Standalone mode
+        window.location.href = '/users'
       }
     }
 
@@ -298,13 +407,13 @@ export default defineComponent({
       form,
       errors,
       isCreating,
-      showForm,
-      store,
       t,
-      getUserIdFromUrl,
-      isPostSaveState,
+      showForm,
+      loadUser,
+      validateForm,
       handleSubmit,
-      goBack
+      goBack,
+      isPostSaveState
     }
   }
 })

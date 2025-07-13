@@ -71,23 +71,100 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, computed } from 'vue'
+import { defineComponent, computed, onMounted, ref, reactive } from 'vue'
 
 export default defineComponent({
   name: 'UsersApp',
   props: {
     store: {
       type: Object,
-      required: true
+      required: false,
+      default: () => ({
+        users: [],
+        loading: false,
+        error: null
+      })
+    },
+    actions: {
+      type: Object,
+      required: false,
+      default: () => ({})
     },
     i18n: {
       type: Object,
-      required: true
+      required: false,
+      default: () => ({})
+    },
+    eventBus: {
+      type: Object,
+      required: false,
+      default: () => ({})
+    },
+    eventHelpers: {
+      type: Object,
+      required: false,
+      default: () => ({})
     }
   },
   setup(props) {
-    const store = props.store
-    const t = (key: string) => (props.i18n && props.i18n.t ? props.i18n.t(key) : key)
+    // Fallback store for standalone mode
+    const fallbackStore = reactive({
+      users: [
+        { id: 1, name: 'John Doe', email: 'john@example.com', role: 'admin' },
+        { id: 2, name: 'Jane Smith', email: 'jane@example.com', role: 'user' },
+        { id: 3, name: 'Bob Johnson', email: 'bob@example.com', role: 'user' }
+      ],
+      loading: false,
+      error: null
+    })
+
+    // Use provided store or fallback
+    const store = reactive({
+      users: (props.store?.users && props.store.users.length > 0) ? props.store.users : fallbackStore.users,
+      loading: props.store?.loading || fallbackStore.loading,
+      error: props.store?.error || fallbackStore.error
+    })
+
+    // Debug logging for standalone mode
+    console.log('Users app initialized:', {
+      hasPropsStore: !!props.store,
+      hasPropsUsers: !!props.store?.users,
+      propsUsersLength: props.store?.users?.length || 0,
+      fallbackUsers: fallbackStore.users,
+      finalUsers: store.users,
+      loading: store.loading
+    })
+
+    // Fallback translations for when i18n is not available
+    const fallbackTranslations: Record<string, string> = {
+      'users.title': 'User Management',
+      'common.loading': 'Loading...',
+      'messages.loadingUsers': 'Loading users...',
+      'messages.noUsers': 'No users found',
+      'users.table.name': 'Name',
+      'users.table.email': 'Email',
+      'users.table.role': 'Role',
+      'users.table.actions': 'Actions',
+      'users.roles.admin': 'Administrator',
+      'users.roles.user': 'User',
+      'users.actions.edit': 'Edit',
+      'users.actions.delete': 'Delete',
+      'users.actions.create': 'Create User'
+    }
+
+    // Use provided translations or fallback
+    const translations = reactive<Record<string, string>>({
+      ...fallbackTranslations,
+      ...(props.i18n ? {} : {}) // Will be updated from iframe message
+    })
+
+    // Translation function with fallback
+    const t = (key: string) => {
+      if (props.i18n && props.i18n.t) {
+        return props.i18n.t(key)
+      }
+      return translations[key] || key
+    }
 
     const adminCount = computed(() => 
       store.users.filter((user: any) => user.role === 'admin').length
@@ -97,6 +174,7 @@ export default defineComponent({
       store.users.filter((user: any) => user.role === 'user').length
     )
 
+    // Computed properties for template conditions
     const showLoading = computed(() => store.loading && store.users.length === 0)
     const showEmptyState = computed(() => !store.loading && store.users.length === 0)
     const showTable = computed(() => store.users.length > 0)
@@ -106,42 +184,97 @@ export default defineComponent({
       return urlParams.get('saved') === 'true'
     })
 
+    console.log('Template conditions:', {
+      showLoading: showLoading.value,
+      showEmptyState: showEmptyState.value,
+      showTable: showTable.value,
+      usersLength: store.users.length,
+      loading: store.loading
+    })
+
+    // const refreshUsers = () => {
+    //   if (props.eventHelpers && props.eventHelpers.requestFetchUsers) {
+    //     props.eventHelpers.requestFetchUsers()
+    //   } else {
+    //     // Fallback for standalone mode
+    //     console.log('Refresh users (standalone mode)')
+    //   }
+    // }
+
     const editUser = (user: any) => {
-      // Implementation for edit user
-      // Communicate with parent shell
+      if (window.parent !== window) {
+        // In iframe, send a message to parent to navigate
+        window.parent.postMessage({ type: 'NAVIGATE', route: `/edit-user?id=${user.id}` }, '*');
+      } else {
+        // Standalone mode
+        window.location.href = `/edit-user?id=${user.id}`;
+      }
     }
 
     const createUser = () => {
-      // Implementation for create user
-      // Communicate with parent shell
+      if (window.parent !== window) {
+        // In iframe, send a message to parent to navigate
+        window.parent.postMessage({ type: 'NAVIGATE', route: '/edit-user' }, '*');
+      } else {
+        // Standalone mode
+        window.location.href = '/edit-user';
+      }
     }
 
     const deleteUser = (userId: number) => {
       const confirmMessage = t('messages.confirmDelete') || 'Are you sure you want to delete this user?'
       if (confirm(confirmMessage)) {
         if (window.parent !== window) {
+          // In iframe, send message to parent
           window.parent.postMessage({
             type: 'DELETE_USER',
             userId: userId
           }, '*')
+        } else if (props.eventHelpers && props.eventHelpers.requestUserDeletion) {
+          // Standalone mode
+          props.eventHelpers.requestUserDeletion(userId)
+        } else {
+          // Fallback for standalone mode
+          const index = store.users.findIndex((u: any) => u.id === userId)
+          if (index !== -1) {
+            store.users.splice(index, 1)
+          }
         }
       }
     }
 
+
+
     // Listen for messages from parent iframe
-    window.addEventListener('message', (event) => {
-      if (event.data && (event.data.type === 'INIT_DATA' || event.data.type === 'STORE_UPDATE')) {
-        if (event.data.store) {
-          store.users = event.data.store.users || []
-          store.loading = event.data.store.loading || false
-          store.error = event.data.store.error || null
+    onMounted(() => {
+      window.addEventListener('message', (event) => {
+        if (event.data && (event.data.type === 'INIT_DATA' || event.data.type === 'STORE_UPDATE')) {
+          console.log('Received data from parent:', event.data)
+          
+          // Update store with data from parent
+          if (event.data.store) {
+            store.users = event.data.store.users || []
+            store.loading = event.data.store.loading || false
+            store.error = event.data.store.error || null
+          }
+          
+          // Update translations with data from parent (only for INIT_DATA)
+          if (event.data.type === 'INIT_DATA' && event.data.translations) {
+            Object.assign(translations, event.data.translations)
+          }
+        }
+      })
+
+      // Request users if not already loaded
+      if (store.users.length === 0) {
+        if (props.eventHelpers && props.eventHelpers.requestFetchUsers) {
+          props.eventHelpers.requestFetchUsers()
         }
       }
     })
 
     return {
       store,
-      t,
       adminCount,
       userCount,
       showLoading,
@@ -149,9 +282,11 @@ export default defineComponent({
       showTable,
       showCreateButton,
       showSuccessMessage,
+      // refreshUsers,
       editUser,
       createUser,
-      deleteUser
+      deleteUser,
+      t
     }
   }
 })
