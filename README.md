@@ -1,6 +1,9 @@
 # Federation Setup with Vue2
 
-A modular frontend platform where a Vue 2 shell dynamically loads Vue 3 remote applications using Module Federation.
+**A modular frontend platform where a Vue 2 shell dynamically loads Vue 3 remote applications using Module Federation.**
+
+
+<img width="946" height="431" alt="image" src="https://github.com/user-attachments/assets/212f567c-2eb5-4108-af8e-86f405d703d9" />
 
 ## Local Setup
 
