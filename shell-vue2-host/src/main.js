@@ -96,7 +96,8 @@ async function bootstrap() {
   })
 
   // Load initial data
-  actions.fetchUsers()
+  console.log('Loading initial data...')
+  await actions.fetchUsers()
   console.log('Initial data loaded successfully')
 
   // Create router instance

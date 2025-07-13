@@ -2,18 +2,13 @@
   <div class="users-app">
     <div class="header">
       <h1>{{ t('users.title') }}</h1>
-      <button 
-        v-if="showCreateButton" 
-        @click="createUser" 
-        class="btn-create"
-        :disabled="store.loading"
-      >
+      <button v-if="showCreateButton" @click="createUser" class="btn-create" :disabled="stableLoading">
         {{ t('users.actions.create') }}
       </button>
     </div>
 
-    <div v-if="store.error" class="error-message">
-      {{ store.error }}
+    <div v-if="stableError" class="error-message">
+      {{ stableError }}
     </div>
 
     <div v-if="showSuccessMessage" class="success-message">
@@ -41,7 +36,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="user in store.users" :key="user.id" class="user-row">
+          <tr v-for="user in stableUsers" :key="user.id" class="user-row">
             <td>{{ user.name }}</td>
             <td>{{ user.email }}</td>
             <td>
@@ -63,7 +58,7 @@
     </div>
 
     <div class="stats">
-      <p>Total Users: {{ store.users.length }}</p>
+      <p>Total Users: {{ stableUsers.length }}</p>
       <p>Admins: {{ adminCount }}</p>
       <p>Regular Users: {{ userCount }}</p>
     </div>
@@ -109,11 +104,7 @@ export default defineComponent({
   setup(props) {
     // Fallback store for standalone mode
     const fallbackStore = reactive({
-      users: [
-        { id: 1, name: 'John Doe', email: 'john@example.com', role: 'admin' },
-        { id: 2, name: 'Jane Smith', email: 'jane@example.com', role: 'user' },
-        { id: 3, name: 'Bob Johnson', email: 'bob@example.com', role: 'user' }
-      ],
+      users: [],
       loading: false,
       error: null
     })
@@ -166,23 +157,28 @@ export default defineComponent({
       return translations[key] || key
     }
 
-    const adminCount = computed(() => 
+    const adminCount = computed(() =>
       store.users.filter((user: any) => user.role === 'admin').length
     )
-    
-    const userCount = computed(() => 
+
+    const userCount = computed(() =>
       store.users.filter((user: any) => user.role === 'user').length
     )
 
     // Computed properties for template conditions
-    const showLoading = computed(() => store.loading && store.users.length === 0)
-    const showEmptyState = computed(() => !store.loading && store.users.length === 0)
+    const showLoading = computed(() => store.loading || store.users.length === 0)
+    const showEmptyState = computed(() => false) // Never show empty state, always show loader instead
     const showTable = computed(() => store.users.length > 0)
-    const showCreateButton = computed(() => !store.loading && !store.error)
+    const showCreateButton = computed(() => !store.loading && !store.error && store.users.length > 0)
     const showSuccessMessage = computed(() => {
       const urlParams = new URLSearchParams(window.location.search)
       return urlParams.get('saved') === 'true'
     })
+
+    // Add a stable reference to prevent unnecessary re-renders
+    const stableUsers = computed(() => store.users)
+    const stableLoading = computed(() => store.loading)
+    const stableError = computed(() => store.error)
 
     console.log('Template conditions:', {
       showLoading: showLoading.value,
@@ -250,14 +246,29 @@ export default defineComponent({
       window.addEventListener('message', (event) => {
         if (event.data && (event.data.type === 'INIT_DATA' || event.data.type === 'STORE_UPDATE')) {
           console.log('Received data from parent:', event.data)
-          
-          // Update store with data from parent
+
+          // Update store with data from parent - use Vue.set for reactivity
           if (event.data.store) {
-            store.users = event.data.store.users || []
-            store.loading = event.data.store.loading || false
-            store.error = event.data.store.error || null
+            // Only update if data has actually changed to prevent unnecessary re-renders
+            const newUsers = event.data.store.users || []
+            const newLoading = event.data.store.loading || false
+            const newError = event.data.store.error || null
+
+            // Check if users array has actually changed
+            const usersChanged = JSON.stringify(newUsers) !== JSON.stringify(store.users)
+            if (usersChanged) {
+              store.users = newUsers
+            }
+
+            if (newLoading !== store.loading) {
+              store.loading = newLoading
+            }
+
+            if (newError !== store.error) {
+              store.error = newError
+            }
           }
-          
+
           // Update translations with data from parent (only for INIT_DATA)
           if (event.data.type === 'INIT_DATA' && event.data.translations) {
             Object.assign(translations, event.data.translations)
@@ -265,9 +276,13 @@ export default defineComponent({
         }
       })
 
-      // Request users if not already loaded
-      if (store.users.length === 0) {
-        if (props.eventHelpers && props.eventHelpers.requestFetchUsers) {
+      // Request users if not already loaded and not in loading state
+      if (store.users.length === 0 && !stableLoading.value) {
+        if (window.parent !== window) {
+          // In iframe, request users from parent
+          window.parent.postMessage({ type: 'FETCH_USERS' }, '*')
+        } else if (props.eventHelpers && props.eventHelpers.requestFetchUsers) {
+          // Standalone mode
           props.eventHelpers.requestFetchUsers()
         }
       }
@@ -282,6 +297,9 @@ export default defineComponent({
       showTable,
       showCreateButton,
       showSuccessMessage,
+      stableUsers,
+      stableLoading,
+      stableError,
       // refreshUsers,
       editUser,
       createUser,
@@ -406,8 +424,13 @@ export default defineComponent({
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .empty-state {
@@ -426,7 +449,7 @@ export default defineComponent({
   width: 100%;
   border-collapse: collapse;
   background: white;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -520,14 +543,14 @@ export default defineComponent({
     gap: 15px;
     align-items: flex-start;
   }
-  
+
   .actions {
     flex-direction: column;
   }
-  
+
   .stats {
     flex-direction: column;
     gap: 10px;
   }
 }
-</style> 
+</style>

@@ -60,22 +60,44 @@ async function createStore() {
   // Store mutations
   const mutations = {
     setUsers(users) {
-      store.users = users
+      // Only update if the users array has actually changed
+      const currentUsersString = JSON.stringify(store.users)
+      const newUsersString = JSON.stringify(users)
+      if (currentUsersString !== newUsersString) {
+        store.users = users
+      }
     },
 
     setSelectedUser(user) {
-      store.selectedUser = user
+      // Only update if the selected user has actually changed
+      const currentUserString = JSON.stringify(store.selectedUser)
+      const newUserString = JSON.stringify(user)
+      if (currentUserString !== newUserString) {
+        store.selectedUser = user
+      }
     },
 
     updateUserInList(updatedUser) {
       const index = store.users.findIndex(u => u.id === updatedUser.id)
       if (index !== -1) {
-        Vue.default.set(store.users, index, updatedUser)
+        // Only update if the user data has actually changed
+        const currentUserString = JSON.stringify(store.users[index])
+        const newUserString = JSON.stringify(updatedUser)
+        if (currentUserString !== newUserString) {
+          Vue.default.set(store.users, index, updatedUser)
+        }
       }
     },
 
     addUserToList(user) {
-      store.users.push(user)
+      // Check if user already exists
+      const existingIndex = store.users.findIndex(u => u.id === user.id)
+      if (existingIndex === -1) {
+        store.users.push(user)
+      } else {
+        // Update existing user
+        Vue.default.set(store.users, existingIndex, user)
+      }
     },
 
     removeUserFromList(userId) {
@@ -86,11 +108,15 @@ async function createStore() {
     },
 
     setLoading(loading) {
-      store.loading = loading
+      if (store.loading !== loading) {
+        store.loading = loading
+      }
     },
 
     setError(error) {
-      store.error = error
+      if (store.error !== error) {
+        store.error = error
+      }
     }
   }
 
