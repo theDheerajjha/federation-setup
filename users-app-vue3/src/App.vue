@@ -7,60 +7,66 @@
       </button>
     </div>
 
-    <div v-if="stableError" class="error-message">
-      {{ stableError }}
-    </div>
-
-    <div v-if="showSuccessMessage" class="success-message">
-      <h3>User saved successfully!</h3>
-      <p>The user has been updated in the system.</p>
-    </div>
-
-    <div v-if="showLoading" class="loading-container">
+    <div v-if="!initialDataReceived" class="loading-container">
       <div class="loading-spinner"></div>
       <p>{{ t('messages.loadingUsers') }}</p>
     </div>
+    <div v-else>
+      <div v-if="stableError" class="error-message">
+        {{ stableError }}
+      </div>
 
-    <div v-else-if="showEmptyState" class="empty-state">
-      <p>{{ t('messages.noUsers') }}</p>
-    </div>
+      <div v-if="showSuccessMessage" class="success-message">
+        <h3>User saved successfully!</h3>
+        <p>The user has been updated in the system.</p>
+      </div>
 
-    <div v-else-if="showTable" class="users-table-container">
-      <table class="users-table">
-        <thead>
-          <tr>
-            <th>{{ t('users.table.name') }}</th>
-            <th>{{ t('users.table.email') }}</th>
-            <th>{{ t('users.table.role') }}</th>
-            <th>{{ t('users.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="user in stableUsers" :key="user.id" class="user-row">
-            <td>{{ user.name }}</td>
-            <td>{{ user.email }}</td>
-            <td>
-              <span :class="['role-badge', `role-${user.role}`]">
-                {{ t(`users.roles.${user.role}`) }}
-              </span>
-            </td>
-            <td class="actions">
-              <button @click="editUser(user)" class="btn-edit">
-                {{ t('users.actions.edit') }}
-              </button>
-              <button @click="deleteUser(user.id)" class="btn-delete">
-                {{ t('users.actions.delete') }}
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+      <div v-if="showLoading" class="loading-container">
+        <div class="loading-spinner"></div>
+        <p>{{ t('messages.loadingUsers') }}</p>
+      </div>
 
-    <div class="stats">
-      <p>Total Users: {{ stableUsers.length }}</p>
-      <p>Admins: {{ adminCount }}</p>
-      <p>Regular Users: {{ userCount }}</p>
+      <div v-else-if="showEmptyState" class="empty-state">
+        <p>{{ t('messages.noUsers') }}</p>
+      </div>
+
+      <div v-else-if="showTable" class="users-table-container">
+        <table class="users-table">
+          <thead>
+            <tr>
+              <th>{{ t('users.table.name') }}</th>
+              <th>{{ t('users.table.email') }}</th>
+              <th>{{ t('users.table.role') }}</th>
+              <th>{{ t('users.table.actions') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="user in stableUsers" :key="user.id" class="user-row">
+              <td>{{ user.name }}</td>
+              <td>{{ user.email }}</td>
+              <td>
+                <span :class="['role-badge', `role-${user.role}`]">
+                  {{ t(`users.roles.${user.role}`) }}
+                </span>
+              </td>
+              <td class="actions">
+                <button @click="editUser(user)" class="btn-edit">
+                  {{ t('users.actions.edit') }}
+                </button>
+                <button @click="deleteUser(user.id)" class="btn-delete">
+                  {{ t('users.actions.delete') }}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="stats">
+        <p>Total Users: {{ stableUsers.length }}</p>
+        <p>Admins: {{ adminCount }}</p>
+        <p>Regular Users: {{ userCount }}</p>
+      </div>
     </div>
   </div>
 </template>
@@ -251,7 +257,7 @@ export default defineComponent({
       }
     }
 
-
+    const initialDataReceived = ref(false)
 
     // Listen for messages from parent iframe
     onMounted(() => {
@@ -296,6 +302,7 @@ export default defineComponent({
           if (event.data.type === 'INIT_DATA' && event.data.translations) {
             Object.assign(translations, event.data.translations)
           }
+          initialDataReceived.value = true // Set flag when data arrives
         }
       })
 
@@ -328,7 +335,8 @@ export default defineComponent({
       editUser,
       createUser,
       deleteUser,
-      t
+      t,
+      initialDataReceived
     }
   }
 })
