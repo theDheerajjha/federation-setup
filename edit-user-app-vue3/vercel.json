@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "name": "edit-user-app-vue3",
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/remoteEntry.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html",
+      "headers": {
+        "Access-Control-Allow-Origin": "*"
+      }
+    }
+  ],
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist"
+} 

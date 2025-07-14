@@ -131,7 +131,7 @@ export default defineComponent({
       'users.title': 'User Management',
       'common.loading': 'Loading...',
       'messages.loadingUsers': 'Loading users...',
-      'messages.noUsers': 'No users found',
+      'messages.noUsers': 'User not found',
       'users.table.name': 'Name',
       'users.table.email': 'Email',
       'users.table.role': 'Role',
@@ -165,9 +165,21 @@ export default defineComponent({
       store.users.filter((user: any) => user.role === 'user').length
     )
 
+    // Add a timeout to show "no users" message after 1 second
+    const loadingTimeout = ref(false)
+    
+    // Set timeout to show empty state after 1 second
+    const startLoadingTimeout = () => {
+      setTimeout(() => {
+        if (store.users.length === 0 && !store.loading) {
+          loadingTimeout.value = true
+        }
+      }, 1000)
+    }
+
     // Computed properties for template conditions
-    const showLoading = computed(() => store.loading || store.users.length === 0)
-    const showEmptyState = computed(() => false) // Never show empty state, always show loader instead
+    const showLoading = computed(() => store.loading && store.users.length === 0)
+    const showEmptyState = computed(() => !store.loading && store.users.length === 0 && loadingTimeout.value)
     const showTable = computed(() => store.users.length > 0)
     const showCreateButton = computed(() => !store.loading && !store.error && store.users.length > 0)
     const showSuccessMessage = computed(() => {
@@ -243,6 +255,9 @@ export default defineComponent({
 
     // Listen for messages from parent iframe
     onMounted(() => {
+      // Start loading timeout when component mounts
+      startLoadingTimeout()
+      
       window.addEventListener('message', (event) => {
         if (event.data && (event.data.type === 'INIT_DATA' || event.data.type === 'STORE_UPDATE')) {
           console.log('Received data from parent:', event.data)
@@ -258,10 +273,18 @@ export default defineComponent({
             const usersChanged = JSON.stringify(newUsers) !== JSON.stringify(store.users)
             if (usersChanged) {
               store.users = newUsers
+              // Reset loading timeout when users are loaded
+              if (newUsers.length > 0) {
+                loadingTimeout.value = false
+              }
             }
 
             if (newLoading !== store.loading) {
               store.loading = newLoading
+              // Start timeout again if loading starts
+              if (newLoading) {
+                startLoadingTimeout()
+              }
             }
 
             if (newError !== store.error) {
@@ -300,6 +323,7 @@ export default defineComponent({
       stableUsers,
       stableLoading,
       stableError,
+      loadingTimeout,
       // refreshUsers,
       editUser,
       createUser,

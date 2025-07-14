@@ -1,6 +1,15 @@
 const { defineConfig } = require('@vue/cli-service')
 const ModuleFederationPlugin = require('webpack/lib/container/ModuleFederationPlugin')
 
+// Get remote URLs from environment variables or use localhost for development
+const getRemoteUrl = (appName, defaultPort) => {
+  const envVar = process.env[`${appName.toUpperCase()}_URL`]
+  if (envVar) {
+    return `${envVar}/remoteEntry.js`
+  }
+  return `http://localhost:${defaultPort}/remoteEntry.js`
+}
+
 module.exports = defineConfig({
   transpileDependencies: true,
   configureWebpack: {
@@ -9,8 +18,8 @@ module.exports = defineConfig({
         name: 'shell',
         filename: 'remoteEntry.js',
         remotes: {
-          usersApp: 'usersApp@http://localhost:3001/remoteEntry.js',
-          editUserApp: 'editUserApp@http://localhost:3002/remoteEntry.js'
+          usersApp: `usersApp@${getRemoteUrl('usersApp', 3001)}`,
+          editUserApp: `editUserApp@${getRemoteUrl('editUserApp', 3002)}`
         },
         exposes: {
           './store': './src/store/index.js',
